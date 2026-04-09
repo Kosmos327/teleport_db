@@ -83,9 +83,12 @@ async def _attempt_single_autopay(
                 )
                 return
 
+            # Determine tariff from the user's active subscription
+            tariff_code = sub.tariff_code if sub else "teleport_1m"
             try:
-                tariff = get_tariff(pm_record.last_payment_id and "teleport_1m" or "teleport_1m")
+                tariff = get_tariff(tariff_code)
             except KeyError:
+                log.warning("Unknown tariff %s for user %s, defaulting", tariff_code, tg_user_id)
                 tariff = get_tariff("teleport_1m")
 
             await event_logs.log(

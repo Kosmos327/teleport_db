@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -64,7 +64,7 @@ async def upsert(
         pm.next_charge_at = next_charge_at
         pm.last_cycle += 1
         pm.retry_count = 0
-        pm.updated_at = datetime.utcnow()
+        pm.updated_at = datetime.now(tz=timezone.utc)
     await session.flush()
     return pm
 
@@ -75,7 +75,7 @@ async def deactivate(session: AsyncSession, tg_user_id: int) -> bool:
     if pm is None:
         return False
     pm.active = False
-    pm.updated_at = datetime.utcnow()
+    pm.updated_at = datetime.now(tz=timezone.utc)
     return True
 
 
@@ -92,13 +92,11 @@ async def record_autopay_attempt(
         pm.last_cycle += 1
     else:
         pm.retry_count += 1
-    pm.updated_at = datetime.utcnow()
+    pm.updated_at = datetime.now(tz=timezone.utc)
 
 
 async def list_due_for_charge(session: AsyncSession) -> list[PaymentMethod]:
     """All active payment methods whose next_charge_at is in the past."""
-    from datetime import timezone
-
     now = datetime.now(tz=timezone.utc)
     result = await session.execute(
         select(PaymentMethod).where(

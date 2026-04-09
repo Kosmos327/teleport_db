@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,7 +31,7 @@ async def get_or_create(
             user.first_name = first_name
             changed = True
         if changed:
-            user.updated_at = datetime.utcnow()
+            user.updated_at = datetime.now(tz=timezone.utc)
     return user
 
 
@@ -43,7 +43,7 @@ async def set_email(session: AsyncSession, tg_user_id: int, email: str) -> None:
     user = await session.get(User, tg_user_id)
     if user:
         user.email = email
-        user.updated_at = datetime.utcnow()
+        user.updated_at = datetime.now(tz=timezone.utc)
 
 
 async def get_email(session: AsyncSession, tg_user_id: int) -> str | None:

@@ -88,7 +88,7 @@ async def set_auto_renew(
     sub = await session.get(Subscription, sub_id)
     if sub:
         sub.auto_renew_enabled = enabled
-        sub.updated_at = datetime.utcnow()
+        sub.updated_at = datetime.now(tz=timezone.utc)
 
 
 async def list_expiring_soon(

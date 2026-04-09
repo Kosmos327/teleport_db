@@ -132,7 +132,7 @@ async def toggle_auto_renew(
     await subscriptions.set_auto_renew(session, sub_id, new_value)
     await event_logs.log(
         session,
-        "card_linked" if new_value else "card_unlinked",
+        "auto_renew_enabled" if new_value else "auto_renew_disabled",
         telegram_user_id=callback.from_user.id,
         sub_id=sub_id,
         auto_renew=new_value,
