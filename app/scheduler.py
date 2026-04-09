@@ -22,11 +22,11 @@ async def send_prenotice_reminders(
     bot: Bot,
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Send renewal reminders for subscriptions expiring within PRENOTICE_DAYS."""
+    """Send renewal reminders for subscriptions expiring within SUBSCRIPTION_PRENOTICE_DAYS."""
     async with session_factory() as session:
         async with session.begin():
             expiring = await subscriptions.list_expiring_soon(
-                session, days=settings.PRENOTICE_DAYS
+                session, days=settings.SUBSCRIPTION_PRENOTICE_DAYS
             )
             for sub in expiring:
                 try:

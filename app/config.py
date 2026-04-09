@@ -12,37 +12,50 @@ class Settings(BaseSettings):
 
     # Telegram
     BOT_TOKEN: str
+    ACCESS_CHAT_ID: int
+    ADMIN_USERNAME: str = ""  # without @
+    ADMIN_IDS: List[int] = []
 
     # PostgreSQL
     DATABASE_URL: str  # postgresql+asyncpg://...
 
     # YooKassa
     YOOKASSA_SHOP_ID: str
-    YOOKASSA_SECRET_KEY: str
-    YOOKASSA_RETURN_URL: str = ""
+    YOOKASSA_API_KEY: str
+    PUBLIC_BASE_URL: str = ""  # empty → use polling mode (dev)
+
+    # Webhook / server
+    WEBAPP_HOST: str = "0.0.0.0"
+    WEBAPP_PORT: int = 8080
+
+    # Receipt settings
+    TAX_SYSTEM_CODE: int = 1
+    VAT_CODE: int = 1
 
     # Timezone
     TIMEZONE: str = "Europe/Moscow"
 
-    # Admins
-    ADMIN_IDS: List[int] = []
-    ADMIN_USERNAME: str = ""  # without @
+    # Pending payment reuse window
+    PENDING_REUSE_MINUTES: int = 30
 
-    # Closed chat for invite links
-    ACCESS_CHAT_ID: int = 0
+    # Recurring payments
+    RECURRING_ENABLED: bool = False
 
-    # Webhook / server
-    WEBHOOK_HOST: str = ""  # empty → use polling (dev mode)
-    BOT_WEBHOOK_PATH: str = "/webhook/bot"
-    YOOKASSA_WEBHOOK_PATH: str = "/webhook/yookassa"
-    WEBAPP_HOST: str = "0.0.0.0"
-    WEBAPP_PORT: int = 8080
+    # Autopay
+    AUTOPAY_ENABLED: bool = False
+    AUTOPAY_CHARGE_HOUR: int = 9
+    AUTOPAY_CHARGE_MINUTE: int = 0
+    AUTOPAY_PRENOTICE_DAYS: int = 3
+    AUTOPAY_RETRY_MINUTES: int = 60
+    AUTOPAY_MAX_RETRIES: int = 3
 
-    # How many minutes a pending payment is considered reusable
-    PAYMENT_REUSE_MINUTES: int = 30
+    # Subscription expiry pre-notice
+    SUBSCRIPTION_PRENOTICE_DAYS: int = 3
+    PRENOTICE_CHECK_INTERVAL_SECONDS: int = 3600
 
-    # Days before expiry to send pre-notice
-    PRENOTICE_DAYS: int = 3
+    # Legal URLs
+    POLICY_URL: str = ""
+    OFFER_URL: str = ""
 
     @field_validator("ADMIN_IDS", mode="before")
     @classmethod
