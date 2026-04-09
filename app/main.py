@@ -1,8 +1,8 @@
 """Application entry point.
 
 Supports two modes:
-- Webhook (production): set WEBHOOK_HOST in .env
-- Polling (development):  leave WEBHOOK_HOST empty
+- Webhook (production): set PUBLIC_BASE_URL in .env
+- Polling (development):  leave PUBLIC_BASE_URL empty
 """
 
 from __future__ import annotations
@@ -57,8 +57,8 @@ async def on_startup(app: web.Application) -> None:
         await conn.run_sync(Base.metadata.create_all)
 
     # Set webhook
-    if settings.WEBHOOK_HOST:
-        webhook_url = f"{settings.WEBHOOK_HOST}{settings.BOT_WEBHOOK_PATH}"
+    if settings.PUBLIC_BASE_URL:
+        webhook_url = f"{settings.PUBLIC_BASE_URL}/webhook/bot"
         await bot.set_webhook(
             url=webhook_url,
             allowed_updates=dp.resolve_used_update_types(),
@@ -79,7 +79,7 @@ async def on_shutdown(app: web.Application) -> None:
     if scheduler:
         scheduler.shutdown(wait=False)
 
-    if settings.WEBHOOK_HOST:
+    if settings.PUBLIC_BASE_URL:
         await bot.delete_webhook()
 
     await bot.session.close()
@@ -97,12 +97,12 @@ def build_app(bot: Bot, dp: Dispatcher) -> web.Application:
 
     # Telegram updates
     SimpleRequestHandler(dispatcher=dp, bot=bot).register(
-        app, path=settings.BOT_WEBHOOK_PATH
+        app, path="/webhook/bot"
     )
     setup_application(app, dp, bot=bot)
 
     # YooKassa notifications
-    app.router.add_post(settings.YOOKASSA_WEBHOOK_PATH, handle_yookassa)
+    app.router.add_post("/webhook/yookassa", handle_yookassa)
 
     app.on_startup.append(on_startup)
     app.on_shutdown.append(on_shutdown)
@@ -133,7 +133,7 @@ def main() -> None:
     )
     dp = build_dispatcher()
 
-    if settings.WEBHOOK_HOST:
+    if settings.PUBLIC_BASE_URL:
         app = build_app(bot, dp)
         log.info(
             "Starting webhook server on %s:%s", settings.WEBAPP_HOST, settings.WEBAPP_PORT

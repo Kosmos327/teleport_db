@@ -43,7 +43,7 @@ async def on_pay(
         session,
         tg_user_id=tg.id,
         tariff=tariff_code,
-        minutes=settings.PAYMENT_REUSE_MINUTES,
+        minutes=settings.PENDING_REUSE_MINUTES,
     )
 
     if recent:
@@ -62,7 +62,6 @@ async def on_pay(
             result = await payment_service.create_payment(
                 tariff=tariff,
                 tg_user_id=tg.id,
-                return_url=settings.YOOKASSA_RETURN_URL,
             )
         except Exception:
             log.exception("Failed to create YooKassa payment for user %s", tg.id)

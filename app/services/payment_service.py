@@ -13,7 +13,7 @@ from app.config import settings
 from app.tariffs import Tariff
 
 # Configure YooKassa once at import time
-Configuration.configure(settings.YOOKASSA_SHOP_ID, settings.YOOKASSA_SECRET_KEY)
+Configuration.configure(settings.YOOKASSA_SHOP_ID, settings.YOOKASSA_API_KEY)
 
 
 def _create_payment_sync(
@@ -60,8 +60,12 @@ async def create_payment(
     payment_method_id: str | None = None,
     idempotency_key: str | None = None,
 ) -> dict[str, Any]:
-    """Async wrapper around YooKassa Payment.create."""
-    effective_return_url = return_url or settings.YOOKASSA_RETURN_URL
+    """Async wrapper around YooKassa Payment.create.
+
+    ``return_url`` is only used for interactive (non-autopay) payments.
+    Callers must supply a non-empty URL when ``payment_method_id`` is None.
+    """
+    effective_return_url = return_url or ""
     return await asyncio.to_thread(
         _create_payment_sync,
         tariff,
