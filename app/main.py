@@ -1,20 +1,21 @@
 """Application entry point.
 
-Supports two modes:
-- Webhook (production): set PUBLIC_BASE_URL in .env
-- Polling (development):  leave PUBLIC_BASE_URL empty
+FastAPI serves the YooKassa webhook while aiogram polling runs concurrently
+as a background asyncio task (started inside FastAPI lifespan).
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiohttp import web
+from fastapi import FastAPI
 
 from app.config import settings
 from app.database.models import Base
@@ -22,7 +23,7 @@ from app.database.session import AsyncSessionFactory, engine
 from app.handlers import email_handler, payment, start, subscription, tariff
 from app.middleware import DbSessionMiddleware
 from app.scheduler import build_scheduler
-from app.webhook.yookassa_webhook import handle_yookassa
+from app.webhook.yookassa_webhook import router as yookassa_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,118 +31,55 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
+bot = Bot(
+    token=settings.BOT_TOKEN,
+    default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+)
 
-def build_dispatcher() -> Dispatcher:
-    dp = Dispatcher(storage=MemoryStorage())
-
-    # Register DB session middleware for both messages and callback queries
-    dp.message.middleware(DbSessionMiddleware(AsyncSessionFactory))
-    dp.callback_query.middleware(DbSessionMiddleware(AsyncSessionFactory))
-
-    # Register routers (order matters for state-based routing)
-    dp.include_router(start.router)
-    dp.include_router(tariff.router)
-    dp.include_router(email_handler.router)
-    dp.include_router(payment.router)
-    dp.include_router(subscription.router)
-
-    return dp
+dp = Dispatcher(storage=MemoryStorage())
+dp.message.middleware(DbSessionMiddleware(AsyncSessionFactory))
+dp.callback_query.middleware(DbSessionMiddleware(AsyncSessionFactory))
+dp.include_router(start.router)
+dp.include_router(tariff.router)
+dp.include_router(email_handler.router)
+dp.include_router(payment.router)
+dp.include_router(subscription.router)
 
 
-async def on_startup(app: web.Application) -> None:
-    bot: Bot = app["bot"]
-    dp: Dispatcher = app["dp"]
-
+@asynccontextmanager
+async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     # Create tables (idempotent — use Alembic in production)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    # Set webhook
-    if settings.PUBLIC_BASE_URL:
-        webhook_url = f"{settings.PUBLIC_BASE_URL}/webhook/bot"
-        await bot.set_webhook(
-            url=webhook_url,
-            allowed_updates=dp.resolve_used_update_types(),
-            drop_pending_updates=True,
-        )
-        log.info("Webhook set to %s", webhook_url)
-
     # Start scheduler
     scheduler = build_scheduler(bot, AsyncSessionFactory)
     scheduler.start()
-    app["scheduler"] = scheduler
     log.info("Scheduler started")
 
-
-async def on_shutdown(app: web.Application) -> None:
-    bot: Bot = app["bot"]
-    scheduler = app.get("scheduler")
-    if scheduler:
-        scheduler.shutdown(wait=False)
-
-    if settings.PUBLIC_BASE_URL:
-        await bot.delete_webhook()
-
-    await bot.session.close()
-    await engine.dispose()
-    log.info("Shutdown complete")
-
-
-def build_app(bot: Bot, dp: Dispatcher) -> web.Application:
-    from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
-
-    app = web.Application()
-    app["bot"] = bot
-    app["dp"] = dp
-    app["session_factory"] = AsyncSessionFactory
-
-    # Telegram updates
-    SimpleRequestHandler(dispatcher=dp, bot=bot).register(
-        app, path="/webhook/bot"
+    # Start aiogram polling in the background so it runs alongside FastAPI
+    polling_task = asyncio.create_task(
+        dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     )
-    setup_application(app, dp, bot=bot)
+    log.info("Polling task created")
 
-    # YooKassa notifications
-    app.router.add_post("/webhook/yookassa", handle_yookassa)
+    # Store bot in app state so webhook handlers can access it without circular imports
+    application.state.bot = bot
+    application.state.session_factory = AsyncSessionFactory
 
-    app.on_startup.append(on_startup)
-    app.on_shutdown.append(on_shutdown)
-
-    return app
-
-
-async def run_polling(bot: Bot, dp: Dispatcher) -> None:
-    """Development mode: long polling."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-    scheduler = build_scheduler(bot, AsyncSessionFactory)
-    scheduler.start()
-
-    log.info("Starting polling mode")
     try:
-        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+        yield
     finally:
+        # Stop polling
+        polling_task.cancel()
+        await asyncio.gather(polling_task, return_exceptions=True)
+        log.info("Polling stopped")
+
         scheduler.shutdown(wait=False)
+        await bot.session.close()
         await engine.dispose()
+        log.info("Shutdown complete")
 
 
-def main() -> None:
-    bot = Bot(
-        token=settings.BOT_TOKEN,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
-    )
-    dp = build_dispatcher()
-
-    if settings.PUBLIC_BASE_URL:
-        app = build_app(bot, dp)
-        log.info(
-            "Starting webhook server on %s:%s", settings.WEBAPP_HOST, settings.WEBAPP_PORT
-        )
-        web.run_app(app, host=settings.WEBAPP_HOST, port=settings.WEBAPP_PORT)
-    else:
-        asyncio.run(run_polling(bot, dp))
-
-
-if __name__ == "__main__":
-    main()
+app = FastAPI(lifespan=lifespan)
+app.include_router(yookassa_router)

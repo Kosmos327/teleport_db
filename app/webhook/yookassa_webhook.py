@@ -1,11 +1,11 @@
-"""aiohttp handler for YooKassa payment webhook notifications."""
+"""FastAPI router for YooKassa payment webhook notifications."""
 
 from __future__ import annotations
 
 import logging
 from datetime import timezone
 
-from aiohttp import web
+from fastapi import APIRouter, Request, Response
 from aiogram import Bot
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -18,14 +18,17 @@ from app.utils.dt import add_months_keep_day, now_local
 
 log = logging.getLogger(__name__)
 
+router = APIRouter()
 
-async def handle_yookassa(request: web.Request) -> web.Response:
+
+@router.post("/webhook/yookassa")
+async def handle_yookassa(request: Request) -> Response:
     """Entry point for YooKassa webhook POST requests."""
     try:
         body = await request.json()
     except Exception:
         log.warning("YooKassa webhook: invalid JSON body")
-        return web.Response(status=400)
+        return Response(status_code=400)
 
     event_type: str = body.get("event", "")
     obj: dict = body.get("object", {})
@@ -34,17 +37,17 @@ async def handle_yookassa(request: web.Request) -> web.Response:
     log.info("YooKassa webhook: event=%s payment_id=%s", event_type, payment_id)
 
     if not payment_id:
-        return web.Response(status=400)
+        return Response(status_code=400)
 
-    session_factory: async_sessionmaker[AsyncSession] = request.app["session_factory"]
-    bot: Bot = request.app["bot"]
+    bot: Bot = request.app.state.bot
+    session_factory: async_sessionmaker[AsyncSession] = request.app.state.session_factory
 
     # Verify the payment with YooKassa (do not trust payload blindly)
     try:
         yk_payment = await payment_service.fetch_payment(payment_id)
     except Exception:
         log.exception("Failed to fetch payment %s from YooKassa", payment_id)
-        return web.Response(status=500)
+        return Response(status_code=500)
 
     yk_status: str = yk_payment.get("status", "")
 
@@ -61,7 +64,7 @@ async def handle_yookassa(request: web.Request) -> web.Response:
             elif event_type == "payment.canceled" and yk_status == "canceled":
                 await _handle_canceled(session, yk_payment)
 
-    return web.Response(status=200)
+    return Response(status_code=200)
 
 
 async def _handle_succeeded(
